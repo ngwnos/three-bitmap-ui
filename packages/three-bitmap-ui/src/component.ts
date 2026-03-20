@@ -3,7 +3,10 @@ import type {
   BitmapUiColorLike,
   BitmapUiDirection,
   BitmapUiDocument,
+  BitmapUiDitherMode,
   BitmapUiFieldDefinition,
+  BitmapUiFrequencyAnalyzerColorMode,
+  BitmapUiFrequencyAnalyzerNode,
   BitmapUiFontAtlas,
   BitmapUiGradientDef,
   BitmapUiInteraction,
@@ -261,6 +264,65 @@ export const Panel = (props: PanelProps): BitmapUiViewNode => ({
   y: props.y,
   zIndex: props.zIndex,
   children: props.children,
+})
+
+export type FrequencyAnalyzerProps = {
+  readonly id: string
+  readonly width?: BitmapUiLength
+  readonly height?: BitmapUiLength
+  readonly minWidth?: number
+  readonly minHeight?: number
+  readonly maxWidth?: number
+  readonly maxHeight?: number
+  readonly padding?: number
+  readonly backgroundColor?: BitmapUiColorLike | null
+  readonly borderColor?: BitmapUiColorLike | null
+  readonly borderWidth?: number
+  readonly clip?: boolean
+  readonly interaction?: BitmapUiInteraction
+  readonly position?: 'flow' | 'absolute'
+  readonly x?: number
+  readonly y?: number
+  readonly zIndex?: number
+  readonly spectrum?: ArrayLike<number>
+  readonly getSpectrum?: (binCount: number) => ArrayLike<number>
+  readonly binWidth?: number
+  readonly gap?: number
+  readonly colorMode?: BitmapUiFrequencyAnalyzerColorMode
+  readonly gradientColors?: readonly (readonly [number, number, number])[]
+  readonly dither?: BitmapUiDitherMode
+  readonly minBarHeight?: number
+  readonly minMagnitude?: number
+}
+
+export const FrequencyAnalyzer = (props: FrequencyAnalyzerProps): BitmapUiFrequencyAnalyzerNode => ({
+  kind: 'frequencyAnalyzer',
+  id: props.id,
+  width: props.width ?? 'content',
+  height: props.height ?? 'content',
+  minWidth: props.minWidth,
+  minHeight: props.minHeight,
+  maxWidth: props.maxWidth,
+  maxHeight: props.maxHeight,
+  padding: props.padding ?? 0,
+  backgroundColor: props.backgroundColor,
+  borderColor: props.borderColor,
+  borderWidth: props.borderWidth ?? 1,
+  clip: props.clip ?? true,
+  interaction: props.interaction,
+  position: props.position,
+  x: props.x,
+  y: props.y,
+  zIndex: props.zIndex,
+  spectrum: props.spectrum,
+  getSpectrum: props.getSpectrum,
+  binWidth: props.binWidth ?? 3,
+  gap: props.gap ?? 1,
+  colorMode: props.colorMode ?? 'magnitude',
+  gradientColors: props.gradientColors,
+  dither: props.dither ?? 'smooth',
+  minBarHeight: props.minBarHeight ?? 0,
+  minMagnitude: props.minMagnitude ?? 0,
 })
 
 export type ScrollbarProps = {

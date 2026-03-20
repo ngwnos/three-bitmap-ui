@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
+import { FrequencyAnalyzer } from './component'
 import { createBitmapUiSurface } from './surface'
 import { createRichTextLayout, type ResolvedTextStyle } from './text-layout'
 import type {
@@ -550,6 +551,53 @@ describe('bitmap ui engine', () => {
       }
     } finally {
       fullSurface.dispose()
+    }
+  })
+
+  it('repaints frequency analyzers through rebuildDynamic without a full document rebuild', () => {
+    const spectrum = new Float32Array([0.25, 0.75, 0.4])
+    const surface = createSurface({
+      backgroundColor: { r: 0, g: 0, b: 0 },
+      root: {
+        kind: 'view',
+        id: 'root',
+        direction: 'column',
+        padding: 0,
+        gap: 0,
+        children: [
+          FrequencyAnalyzer({
+            id: 'analyzer',
+            width: 11,
+            height: 8,
+            padding: 0,
+            borderWidth: 0,
+            backgroundColor: { r: 0, g: 0, b: 0 },
+            spectrum,
+            binWidth: 2,
+            gap: 1,
+            colorMode: 'magnitude',
+            gradientColors: [[255, 64, 32], [255, 255, 128]],
+            dither: 'smooth',
+          }),
+        ],
+      },
+    }, 11, 8)
+
+    try {
+      const before = surface.exportSnapshot()
+      expect(getPixel(before, 0, 7).a).toBe(255)
+      expect(getPixel(before, 3, 1)).toMatchObject({ r: 0, g: 0, b: 0, a: 255 })
+
+      spectrum[0] = 1
+      spectrum[1] = 0
+      surface.rebuildDynamic()
+
+      const after = surface.exportSnapshot()
+      expect(getPixel(after, 0, 1).a).toBe(255)
+      expect(getPixel(after, 0, 1).r).toBeGreaterThan(0)
+      expect(getPixel(after, 3, 7)).toMatchObject({ r: 0, g: 0, b: 0, a: 255 })
+    } finally {
+      surface.dispose()
     }
   })
 })

@@ -4,6 +4,7 @@ const BITMAP_UI_MAX_TEXTURE_COLUMNS = 4096
 const BITMAP_UI_MAX_TEXTURE_ROWS = 4096
 import type {
   BitmapUiColorLike,
+  BitmapUiDitherMode,
   BitmapUiDebugColor,
   DynamicRegionPainter,
   DynamicRegionRect,
@@ -16,6 +17,7 @@ import type {
   BitmapUiDocument,
   BitmapUiFieldType,
   BitmapUiFieldState,
+  BitmapUiFrequencyAnalyzerColorMode,
   BitmapUiFontAtlas,
   BitmapUiKeyInput,
   BitmapUiKeyResult,
@@ -31,7 +33,7 @@ import type {
   BitmapUiTone,
   BitmapUiOverflow,
 } from './types'
-import { fillGradientRect, type GradientDef } from './gradient'
+import { fillGradientRect, sampleGradientColor, type GradientDef } from './gradient'
 import {
   alignTextOriginX,
   collectRichTextPlainText,
@@ -165,6 +167,19 @@ type ResolvedTableNode = ResolvedBaseNode & {
   readonly children: readonly ResolvedNode[]
 }
 
+type ResolvedFrequencyAnalyzerNode = ResolvedBaseNode & {
+  readonly kind: 'frequencyAnalyzer'
+  readonly spectrum: ArrayLike<number> | null
+  readonly getSpectrum: ((binCount: number) => ArrayLike<number>) | null
+  readonly binWidth: number
+  readonly gap: number
+  readonly colorMode: BitmapUiFrequencyAnalyzerColorMode
+  readonly gradientColors: readonly (readonly [number, number, number])[]
+  readonly dither: BitmapUiDitherMode
+  readonly minBarHeight: number
+  readonly minMagnitude: number
+}
+
 type ResolvedNode =
   | ResolvedViewNode
   | ResolvedTextNode
@@ -173,6 +188,14 @@ type ResolvedNode =
   | ResolvedSpacerNode
   | ResolvedRuleNode
   | ResolvedTableNode
+  | ResolvedFrequencyAnalyzerNode
+
+type FrequencyAnalyzerPaintState = {
+  readonly node: ResolvedFrequencyAnalyzerNode
+  readonly clipRect: Rect | null
+  readonly baseRect: Rect | null
+  readonly basePixels: Uint8Array
+}
 
 type FieldHit = {
   readonly fieldId: string
@@ -468,6 +491,22 @@ const cloneResolvedNode = (node: ResolvedNode): BitmapUiDebugNode => {
     }
   }
 
+  if (node.kind === 'frequencyAnalyzer') {
+    return {
+      ...base,
+      kind: 'frequencyAnalyzer',
+      binWidth: node.binWidth,
+      gap: node.gap,
+      colorMode: node.colorMode,
+      gradientStopCount: node.gradientColors.length,
+      dither: node.dither,
+      minBarHeight: node.minBarHeight,
+      minMagnitude: node.minMagnitude,
+      spectrumLength: node.spectrum?.length ?? 0,
+      hasSpectrumSource: node.getSpectrum !== null,
+    }
+  }
+
   if (node.kind === 'input' || node.kind === 'textarea') {
     return {
       ...base,
@@ -515,6 +554,105 @@ const cloneResolvedNode = (node: ResolvedNode): BitmapUiDebugNode => {
   return {
     ...base,
     kind: 'spacer',
+  }
+}
+
+const computeFrequencyAnalyzerBinCount = (width: number, binWidth: number, gap: number): number => {
+  const clampedBinWidth = Math.max(1, Math.round(binWidth))
+  const clampedGap = Math.max(0, Math.round(gap))
+  const stride = clampedBinWidth + clampedGap
+  return stride > 0 ? Math.max(0, Math.floor((Math.max(0, width) + clampedGap) / stride)) : 0
+}
+
+const captureBufferRect = (
+  buffer: Uint8Array,
+  bufferWidth: number,
+  rect: Rect | null,
+): Uint8Array => {
+  if (!rect || rect.width <= 0 || rect.height <= 0) return new Uint8Array(0)
+  const snapshot = new Uint8Array(rect.width * rect.height * 4)
+  for (let row = 0; row < rect.height; row += 1) {
+    const srcStart = ((rect.y + row) * bufferWidth + rect.x) * 4
+    const srcEnd = srcStart + rect.width * 4
+    snapshot.set(buffer.subarray(srcStart, srcEnd), row * rect.width * 4)
+  }
+  return snapshot
+}
+
+const restoreBufferRect = (
+  buffer: Uint8Array,
+  bufferWidth: number,
+  rect: Rect | null,
+  snapshot: Uint8Array,
+): void => {
+  if (!rect || rect.width <= 0 || rect.height <= 0 || snapshot.length === 0) return
+  for (let row = 0; row < rect.height; row += 1) {
+    const destStart = ((rect.y + row) * bufferWidth + rect.x) * 4
+    buffer.set(snapshot.subarray(row * rect.width * 4, (row + 1) * rect.width * 4), destStart)
+  }
+}
+
+const renderFrequencyAnalyzer = (
+  buffer: Uint8Array,
+  width: number,
+  _height: number,
+  node: ResolvedFrequencyAnalyzerNode,
+  clipRect: Rect | null,
+): void => {
+  const targetRect = intersectRect(node.contentBox, clipRect ?? node.contentBox)
+  if (!targetRect || targetRect.width <= 0 || targetRect.height <= 0) return
+
+  const binWidth = Math.max(1, node.binWidth)
+  const gap = Math.max(0, node.gap)
+  const stride = binWidth + gap
+  const binCount = computeFrequencyAnalyzerBinCount(node.contentBox.width, binWidth, gap)
+  if (binCount <= 0) return
+
+  const spectrum = node.getSpectrum ? node.getSpectrum(binCount) : (node.spectrum ?? [])
+  const colorStopCount = node.gradientColors.length
+
+  for (let bin = 0; bin < binCount; bin += 1) {
+    const rawMagnitude = Number(spectrum[bin] ?? 0)
+    const visibleMagnitude = clamp(Math.max(node.minMagnitude, rawMagnitude), 0, 1)
+    if (visibleMagnitude <= 0) continue
+
+    const barHeight = Math.min(
+      node.contentBox.height,
+      Math.max(node.minBarHeight, Math.round(visibleMagnitude * node.contentBox.height)),
+    )
+    if (barHeight <= 0) continue
+
+    const barX = node.contentBox.x + bin * stride
+    const barRect = intersectRect(
+      { x: barX, y: node.contentBox.y + node.contentBox.height - barHeight, width: binWidth, height: barHeight },
+      targetRect,
+    )
+    if (!barRect) continue
+
+    for (let py = barRect.y; py < barRect.y + barRect.height; py += 1) {
+      const heightT = node.contentBox.height > 1
+        ? 1 - (py - node.contentBox.y) / (node.contentBox.height - 1)
+        : 1
+      for (let px = barRect.x; px < barRect.x + barRect.width; px += 1) {
+        let t: number
+        if (node.colorMode === 'height') {
+          t = heightT
+        } else if (node.colorMode === 'frequency') {
+          t = binCount > 1 ? bin / (binCount - 1) : 0
+        } else {
+          t = visibleMagnitude
+        }
+
+        const color = colorStopCount > 0
+          ? sampleGradientColor(t, node.gradientColors, px, py, node.dither)
+          : [255, 255, 255] as const
+        const offset = (py * width + px) * 4
+        buffer[offset] = color[0]
+        buffer[offset + 1] = color[1]
+        buffer[offset + 2] = color[2]
+        buffer[offset + 3] = 255
+      }
+    }
   }
 }
 
@@ -888,6 +1026,11 @@ const measureNode = (
         height: resolveLength(node.height, contentHeight + inset * 2, availableHeight, node.minHeight, node.maxHeight),
       }
     }
+    case 'frequencyAnalyzer':
+      return {
+        width: resolveLength(node.width, inset * 2, availableWidth, node.minWidth, node.maxWidth),
+        height: resolveLength(node.height, inset * 2, availableHeight, node.minHeight, node.maxHeight),
+      }
     case 'table': {
       const table = measureTableContent(node, innerAvailableWidth, innerAvailableHeight, nextInheritedTextStyle, context.palette)
       return {
@@ -1321,6 +1464,34 @@ const layoutNode = (
     }
   }
 
+  if (node.kind === 'frequencyAnalyzer') {
+    const fallbackColor = colorLikeToLinearRgba(palette.accentText)
+    return {
+      kind: 'frequencyAnalyzer',
+      nodeId: node.id,
+      zIndex: Math.round(node.zIndex ?? 0),
+      box,
+      contentBox,
+      backgroundColor,
+      borderColor,
+      borderWidth,
+      clip: true,
+      interactionId,
+      interactionRole,
+      spectrum: node.spectrum ?? null,
+      getSpectrum: node.getSpectrum ?? null,
+      binWidth: Math.max(1, Math.round(node.binWidth ?? 3)),
+      gap: Math.max(0, Math.round(node.gap ?? 1)),
+      colorMode: node.colorMode ?? 'magnitude',
+      gradientColors: node.gradientColors?.length
+        ? node.gradientColors
+        : [[fallbackColor.r, fallbackColor.g, fallbackColor.b] as const],
+      dither: node.dither ?? 'smooth',
+      minBarHeight: Math.max(0, Math.round(node.minBarHeight ?? 0)),
+      minMagnitude: clamp(node.minMagnitude ?? 0, 0, 1),
+    }
+  }
+
   if (node.kind === 'table') {
     const tableMeasurement = measureTableContent(node, contentBox.width, contentBox.height, nextInheritedTextStyle, palette)
     return {
@@ -1674,6 +1845,7 @@ const renderNode = (
   focusedFieldId: string | null,
   caretVisible: boolean,
   parentClip: Rect | null,
+  frequencyAnalyzerStates: Map<string, FrequencyAnalyzerPaintState> | null,
 ): void => {
   const clipRect = node.clip ? intersectRect(parentClip ?? node.box, node.contentBox) : parentClip
   fillRect(buffer, width, height, node.box, node.backgroundColor, parentClip)
@@ -1688,7 +1860,7 @@ const renderNode = (
         if (left.zIndex !== right.zIndex) return left.zIndex - right.zIndex
         return left.nodeId.localeCompare(right.nodeId)
       })
-      .forEach((child) => renderNode(buffer, width, height, child, fields, focusedFieldId, caretVisible, clipRect))
+      .forEach((child) => renderNode(buffer, width, height, child, fields, focusedFieldId, caretVisible, clipRect, frequencyAnalyzerStates))
     return
   }
 
@@ -1698,7 +1870,24 @@ const renderNode = (
         if (left.zIndex !== right.zIndex) return left.zIndex - right.zIndex
         return left.nodeId.localeCompare(right.nodeId)
       })
-      .forEach((child) => renderNode(buffer, width, height, child, fields, focusedFieldId, caretVisible, clipRect))
+      .forEach((child) => renderNode(buffer, width, height, child, fields, focusedFieldId, caretVisible, clipRect, frequencyAnalyzerStates))
+    return
+  }
+
+  if (node.kind === 'frequencyAnalyzer') {
+    const analyzerClipRect = intersectRect(node.contentBox, clipRect ?? node.contentBox)
+    const baseRect = analyzerClipRect
+      ? { x: analyzerClipRect.x, y: analyzerClipRect.y, width: analyzerClipRect.width, height: analyzerClipRect.height }
+      : null
+    if (frequencyAnalyzerStates) {
+      frequencyAnalyzerStates.set(node.nodeId, {
+        node,
+        clipRect: analyzerClipRect,
+        baseRect,
+        basePixels: captureBufferRect(buffer, width, baseRect),
+      })
+    }
+    renderFrequencyAnalyzer(buffer, width, height, node, analyzerClipRect)
     return
   }
 
@@ -1792,6 +1981,7 @@ class BitmapUiElementImpl implements BitmapUiElement {
   private disposed = false
   private readonly dynamicRegions = new Map<string, DynamicRegionPainter>()
   private resolvedDynamicRects = new Map<string, DynamicRegionRect>()
+  private readonly frequencyAnalyzerStates = new Map<string, FrequencyAnalyzerPaintState>()
 
   constructor(settings: BitmapUiElementSettings) {
     this.id = settings.id
@@ -1868,6 +2058,7 @@ class BitmapUiElementImpl implements BitmapUiElement {
     this.fieldHits = []
     this.interactionHits = []
     this.fieldOrder = []
+    this.frequencyAnalyzerStates.clear()
     const backgroundColor = resolveDocumentBackgroundColor(this.document, this.palette)
     fillRect(
       this.pixelBuffer,
@@ -1922,6 +2113,7 @@ class BitmapUiElementImpl implements BitmapUiElement {
       this.focusedFieldId,
       this.caretVisible,
       { x: 0, y: 0, width: this.textureWidth, height: this.textureHeight },
+      this.frequencyAnalyzerStates,
     )
     this.resolveDynamicRects(rootNode)
     this.paintDynamicRegions()
@@ -2422,7 +2614,11 @@ class BitmapUiElementImpl implements BitmapUiElement {
   }
 
   rebuildDynamic(): void {
-    if (this.disposed || this.dynamicRegions.size === 0) return
+    if (this.disposed || (this.dynamicRegions.size === 0 && this.frequencyAnalyzerStates.size === 0)) return
+    for (const state of this.frequencyAnalyzerStates.values()) {
+      restoreBufferRect(this.pixelBuffer, this.textureWidth, state.baseRect, state.basePixels)
+      renderFrequencyAnalyzer(this.pixelBuffer, this.textureWidth, this.textureHeight, state.node, state.clipRect)
+    }
     this.paintDynamicRegions()
     this.texture.needsUpdate = true
   }

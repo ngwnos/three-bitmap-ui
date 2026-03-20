@@ -8,6 +8,8 @@ export type BitmapUiTextAlign = 'start' | 'center' | 'end'
 export type BitmapUiTone = 'normal' | 'dim' | 'accent'
 export type BitmapUiInteractionBounds = 'box' | 'content'
 export type BitmapUiOverflow = 'visible' | 'clip' | 'scroll'
+export type BitmapUiDitherMode = 'bayer4x4' | 'bayer2x2' | 'bluenoise' | 'none' | 'smooth'
+export type BitmapUiFrequencyAnalyzerColorMode = 'height' | 'frequency' | 'magnitude'
 export type BitmapUiColorLike =
   | string
   | THREE.ColorRepresentation
@@ -108,7 +110,7 @@ export type BitmapUiGradientDef = {
   readonly angle?: number
   readonly centerX?: number
   readonly centerY?: number
-  readonly dither?: 'bayer4x4' | 'bayer2x2' | 'bluenoise' | 'none' | 'smooth'
+  readonly dither?: BitmapUiDitherMode
   readonly ditherStrength?: number
   readonly mirror?: boolean
   readonly referenceRect?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
@@ -220,6 +222,19 @@ export type BitmapUiTableNode = BitmapUiNodeBase & {
   readonly rowGap?: number
 }
 
+export type BitmapUiFrequencyAnalyzerNode = BitmapUiNodeBase & {
+  readonly kind: 'frequencyAnalyzer'
+  readonly spectrum?: ArrayLike<number>
+  readonly getSpectrum?: (binCount: number) => ArrayLike<number>
+  readonly binWidth?: number
+  readonly gap?: number
+  readonly colorMode?: BitmapUiFrequencyAnalyzerColorMode
+  readonly gradientColors?: readonly (readonly [number, number, number])[]
+  readonly dither?: BitmapUiDitherMode
+  readonly minBarHeight?: number
+  readonly minMagnitude?: number
+}
+
 export type BitmapUiNode =
   | BitmapUiViewNode
   | BitmapUiTextNode
@@ -229,6 +244,7 @@ export type BitmapUiNode =
   | BitmapUiSpacerNode
   | BitmapUiRuleNode
   | BitmapUiTableNode
+  | BitmapUiFrequencyAnalyzerNode
 
 export type BitmapUiFieldType = 'input' | 'textarea'
 
@@ -470,6 +486,19 @@ export type BitmapUiDebugTableNode = BitmapUiDebugNodeBase & {
   readonly children: readonly BitmapUiDebugNode[]
 }
 
+export type BitmapUiDebugFrequencyAnalyzerNode = BitmapUiDebugNodeBase & {
+  readonly kind: 'frequencyAnalyzer'
+  readonly binWidth: number
+  readonly gap: number
+  readonly colorMode: BitmapUiFrequencyAnalyzerColorMode
+  readonly gradientStopCount: number
+  readonly dither: BitmapUiDitherMode
+  readonly minBarHeight: number
+  readonly minMagnitude: number
+  readonly spectrumLength: number
+  readonly hasSpectrumSource: boolean
+}
+
 export type BitmapUiDebugNode =
   | BitmapUiDebugViewNode
   | BitmapUiDebugTextNode
@@ -478,6 +507,7 @@ export type BitmapUiDebugNode =
   | BitmapUiDebugSpacerNode
   | BitmapUiDebugRuleNode
   | BitmapUiDebugTableNode
+  | BitmapUiDebugFrequencyAnalyzerNode
 
 export type BitmapUiDebugSnapshot = {
   readonly width: number
