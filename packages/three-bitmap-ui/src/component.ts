@@ -266,6 +266,229 @@ export const Panel = (props: PanelProps): BitmapUiViewNode => ({
   children: props.children,
 })
 
+export type ButtonProps = {
+  readonly id: string
+  readonly label: string
+  readonly width?: BitmapUiLength
+  readonly height?: BitmapUiLength
+  readonly padding?: number
+  readonly borderWidth?: number
+  readonly runtime?: RuntimeSnapshot
+  readonly interaction?: BitmapUiInteraction
+  readonly interactionId?: string
+  readonly textStyle?: BitmapUiTextStyle
+  readonly textAlign?: 'start' | 'center' | 'end'
+  readonly active?: boolean
+  readonly disabled?: boolean
+  readonly backgroundColor?: BitmapUiColorLike | null
+  readonly hoverBackgroundColor?: BitmapUiColorLike | null
+  readonly activeBackgroundColor?: BitmapUiColorLike | null
+  readonly pressedBackgroundColor?: BitmapUiColorLike | null
+  readonly disabledBackgroundColor?: BitmapUiColorLike | null
+  readonly borderColor?: BitmapUiColorLike | null
+  readonly hoverBorderColor?: BitmapUiColorLike | null
+  readonly activeBorderColor?: BitmapUiColorLike | null
+  readonly pressedBorderColor?: BitmapUiColorLike | null
+  readonly disabledBorderColor?: BitmapUiColorLike | null
+  readonly textColor?: BitmapUiColorLike
+  readonly hoverTextColor?: BitmapUiColorLike
+  readonly activeTextColor?: BitmapUiColorLike
+  readonly pressedTextColor?: BitmapUiColorLike
+  readonly disabledTextColor?: BitmapUiColorLike
+  readonly position?: 'flow' | 'absolute'
+  readonly x?: number
+  readonly y?: number
+  readonly zIndex?: number
+}
+
+export type ButtonVisualProps = Omit<
+  ButtonProps,
+  'id' | 'label' | 'interaction' | 'interactionId' | 'runtime' | 'width'
+>
+
+export const Button = (props: ButtonProps): BitmapUiViewNode => {
+  const interactionId = props.interaction?.id ?? props.interactionId ?? props.id
+  const hovered = !props.disabled && props.runtime?.hoveredInteractionId === interactionId
+  const pressed = !props.disabled && props.runtime?.pressedInteractionId === interactionId
+
+  const backgroundColor = props.disabled
+    ? props.disabledBackgroundColor ?? '#05080c'
+    : pressed
+      ? props.pressedBackgroundColor ?? '#8af3b6'
+      : props.active
+        ? props.activeBackgroundColor ?? '#17303b'
+        : hovered
+          ? props.hoverBackgroundColor ?? '#10252d'
+          : props.backgroundColor ?? '#091219'
+
+  const borderColor = props.disabled
+    ? props.disabledBorderColor ?? '#1b2e38'
+    : pressed
+      ? props.pressedBorderColor ?? '#effff9'
+      : props.active
+        ? props.activeBorderColor ?? '#66d8c6'
+        : hovered
+          ? props.hoverBorderColor ?? '#467d7f'
+          : props.borderColor ?? '#24434f'
+
+  const textColor = props.disabled
+    ? props.disabledTextColor ?? '#58717d'
+    : pressed
+      ? props.pressedTextColor ?? '#081015'
+      : props.active
+        ? props.activeTextColor ?? '#f1fbff'
+        : hovered
+          ? props.hoverTextColor ?? '#d7faf4'
+          : props.textColor ?? '#90b4c4'
+
+  return Panel({
+    id: props.id,
+    width: props.width ?? 'content',
+    height: props.height ?? 10,
+    padding: props.padding ?? 1,
+    gap: 0,
+    justify: 'center',
+    align: 'center',
+    backgroundColor,
+    borderColor,
+    borderWidth: props.borderWidth ?? 1,
+    interaction: props.disabled ? undefined : (props.interaction ?? { id: interactionId, role: 'button' }),
+    position: props.position,
+    x: props.x,
+    y: props.y,
+    zIndex: props.zIndex,
+    children: [{
+      kind: 'text',
+      id: `${props.id}-label`,
+      text: props.label,
+      width: 'fill',
+      textAlign: props.textAlign ?? 'center',
+      textStyle: props.textStyle
+        ? { ...props.textStyle, color: textColor }
+        : undefined,
+    }],
+  })
+}
+
+export type StepperProps = {
+  readonly id: string
+  readonly valueLabel: string
+  readonly decrementInteractionId: string
+  readonly incrementInteractionId: string
+  readonly decrementLabel?: string
+  readonly incrementLabel?: string
+  readonly runtime?: RuntimeSnapshot
+  readonly width?: BitmapUiLength
+  readonly height?: BitmapUiLength
+  readonly gap?: number
+  readonly padding?: number
+  readonly buttonWidth?: number
+  readonly valueWidth?: BitmapUiLength
+  readonly backgroundColor?: BitmapUiColorLike | null
+  readonly borderColor?: BitmapUiColorLike | null
+  readonly borderWidth?: number
+  readonly valueTextStyle?: BitmapUiTextStyle
+  readonly valueColor?: BitmapUiColorLike
+  readonly buttonProps?: ButtonVisualProps
+}
+
+export const Stepper = (props: StepperProps): BitmapUiViewNode => {
+  const buttonHeight = props.buttonProps?.height ?? props.height ?? 10
+
+  return Panel({
+    id: props.id,
+    direction: 'row',
+    width: props.width ?? 'content',
+    height: props.height ?? 'content',
+    gap: props.gap ?? 1,
+    padding: props.padding ?? 0,
+    backgroundColor: props.backgroundColor ?? null,
+    borderColor: props.borderColor ?? null,
+    borderWidth: props.borderWidth ?? 0,
+    align: 'center',
+    children: [
+      Button({
+        ...props.buttonProps,
+        id: `${props.id}-dec`,
+        label: props.decrementLabel ?? '<',
+        width: props.buttonWidth ?? 12,
+        height: buttonHeight,
+        runtime: props.runtime,
+        interactionId: props.decrementInteractionId,
+      }),
+      {
+        kind: 'text',
+        id: `${props.id}-value`,
+        text: props.valueLabel,
+        width: props.valueWidth ?? 'fill',
+        textAlign: 'center',
+        textStyle: props.valueTextStyle
+          ? { ...props.valueTextStyle, color: props.valueColor ?? props.valueTextStyle.color }
+          : undefined,
+      },
+      Button({
+        ...props.buttonProps,
+        id: `${props.id}-inc`,
+        label: props.incrementLabel ?? '>',
+        width: props.buttonWidth ?? 12,
+        height: buttonHeight,
+        runtime: props.runtime,
+        interactionId: props.incrementInteractionId,
+      }),
+    ],
+  })
+}
+
+export type SegmentedControlOption<Value extends string = string> = {
+  readonly value: Value
+  readonly label: string
+  readonly interactionId?: string
+  readonly width?: BitmapUiLength
+  readonly disabled?: boolean
+}
+
+export type SegmentedControlProps<Value extends string = string> = {
+  readonly id: string
+  readonly options: readonly SegmentedControlOption<Value>[]
+  readonly selectedValue: Value
+  readonly runtime?: RuntimeSnapshot
+  readonly width?: BitmapUiLength
+  readonly height?: BitmapUiLength
+  readonly gap?: number
+  readonly padding?: number
+  readonly segmentWidth?: BitmapUiLength
+  readonly backgroundColor?: BitmapUiColorLike | null
+  readonly borderColor?: BitmapUiColorLike | null
+  readonly borderWidth?: number
+  readonly buttonProps?: ButtonVisualProps
+}
+
+export const SegmentedControl = <Value extends string>(props: SegmentedControlProps<Value>): BitmapUiViewNode =>
+  Panel({
+    id: props.id,
+    direction: 'row',
+    width: props.width ?? 'fill',
+    height: props.height ?? 'content',
+    gap: props.gap ?? 1,
+    padding: props.padding ?? 0,
+    backgroundColor: props.backgroundColor ?? null,
+    borderColor: props.borderColor ?? null,
+    borderWidth: props.borderWidth ?? 0,
+    align: 'center',
+    children: props.options.map((option) =>
+      Button({
+        ...props.buttonProps,
+        id: `${props.id}-${option.value}`,
+        label: option.label,
+        width: option.width ?? props.segmentWidth ?? 'fill',
+        height: props.buttonProps?.height ?? props.height ?? 10,
+        runtime: props.runtime,
+        interactionId: option.interactionId ?? `${props.id}:${option.value}`,
+        active: option.value === props.selectedValue,
+        disabled: option.disabled,
+      })),
+  })
+
 export type FrequencyAnalyzerProps = {
   readonly id: string
   readonly width?: BitmapUiLength

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { FrequencyAnalyzer } from './component'
+import { Button, FrequencyAnalyzer, SegmentedControl, Stepper } from './component'
 import { createBitmapUiSurface } from './surface'
 import { createRichTextLayout, type ResolvedTextStyle } from './text-layout'
 import type {
@@ -239,6 +239,97 @@ describe('bitmap ui engine', () => {
     } finally {
       surface.dispose()
     }
+  })
+
+  it('styles button state from runtime hover and pressed ids', () => {
+    const button = Button({
+      id: 'demo-button',
+      label: 'PRESS',
+      interactionId: 'demo:button',
+      runtime: {
+        nowMs: 0,
+        blinkVisible: true,
+        hoveredInteractionId: 'demo:button',
+        pressedInteractionId: 'demo:button',
+        focusedFieldId: null,
+      },
+      textStyle: { font: TALL_FONT, color: null },
+    })
+
+    expect(button).toMatchObject({
+      kind: 'view',
+      id: 'demo-button',
+      backgroundColor: '#8af3b6',
+      borderColor: '#effff9',
+      interaction: { id: 'demo:button', role: 'button' },
+    })
+    expect(button.children[0]).toMatchObject({
+      kind: 'text',
+      id: 'demo-button-label',
+      text: 'PRESS',
+      textStyle: { color: '#081015' },
+    })
+  })
+
+  it('builds steppers with decrement and increment buttons around the value', () => {
+    const stepper = Stepper({
+      id: 'volume',
+      valueLabel: '04',
+      decrementInteractionId: 'volume:dec',
+      incrementInteractionId: 'volume:inc',
+      valueTextStyle: { font: TALL_FONT, color: null },
+      buttonProps: { textStyle: { font: TALL_FONT, color: null } },
+    })
+
+    expect(stepper).toMatchObject({
+      kind: 'view',
+      id: 'volume',
+      direction: 'row',
+    })
+    expect(stepper.children).toHaveLength(3)
+    expect(stepper.children[0]).toMatchObject({
+      id: 'volume-dec',
+      interaction: { id: 'volume:dec', role: 'button' },
+    })
+    expect(stepper.children[1]).toMatchObject({
+      kind: 'text',
+      id: 'volume-value',
+      text: '04',
+    })
+    expect(stepper.children[2]).toMatchObject({
+      id: 'volume-inc',
+      interaction: { id: 'volume:inc', role: 'button' },
+    })
+  })
+
+  it('marks the selected segmented control option as active', () => {
+    const control = SegmentedControl({
+      id: 'mode',
+      selectedValue: 'frequency',
+      options: [
+        { value: 'height', label: 'HGT' },
+        { value: 'frequency', label: 'FRQ' },
+        { value: 'magnitude', label: 'MAG' },
+      ] as const,
+      buttonProps: { textStyle: { font: TALL_FONT, color: null } },
+    })
+
+    expect(control).toMatchObject({
+      kind: 'view',
+      id: 'mode',
+      direction: 'row',
+    })
+    expect(control.children).toHaveLength(3)
+    expect(control.children[0]).toMatchObject({
+      id: 'mode-height',
+      backgroundColor: '#091219',
+    })
+    expect(control.children[1]).toMatchObject({
+      id: 'mode-frequency',
+      backgroundColor: '#17303b',
+      borderColor: '#66d8c6',
+      interaction: { id: 'mode:frequency', role: 'button' },
+    })
   })
 
   it('tracks interactive hover and click targets with child priority', () => {
